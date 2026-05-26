@@ -50,7 +50,7 @@ def send_telegram(message):
     except Exception as e:
         print(f"Erreur Telegram: {e}")
 
-def scrape_ads():
+def scrape_tesla_ads():
     ads = []
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     seen_urls = set()
@@ -60,8 +60,6 @@ def scrape_ads():
             print(f"Scraping: {url}")
             response = requests.get(url, headers=headers, timeout=15)
             soup = BeautifulSoup(response.text, "html.parser")
-
-            # Find all car listing links
             links = soup.find_all("a", href=lambda h: h and "/en/damaged/passenger-cars/tesla" in h)
             print(f"  Trouvé {len(links)} annonces")
 
@@ -76,7 +74,7 @@ def scrape_ads():
                     continue
                 seen_urls.add(full_url)
 
-                # Extract year from alt text
+                # Extract year
                 year = None
                 for img in link.find_all("img"):
                     alt = img.get("alt", "")
@@ -86,7 +84,8 @@ def scrape_ads():
                         except:
                             pass
 
-                if year is None or year < MIN_YEAR:
+                # Filter: skip only if year is known AND too old
+                if year is not None and year < MIN_YEAR:
                     continue
 
                 # Extract title
@@ -107,16 +106,17 @@ def scrape_ads():
                 # Extract mileage
                 km = "N/A"
                 for img in link.find_all("img"):
-                    alt = img.get("alt", "")
-                    if "distance" in img.get("src", "") or (alt and alt.replace(".", "").replace(",", "").isdigit()):
-                        km = alt
+                    if "distance" in img.get("src", ""):
+                        km = img.get("alt", "N/A")
                         break
+
+                year_display = str(year) if year else "?"
 
                 ads.append({
                     "url": full_url,
                     "title": title,
                     "subtitle": subtitle,
-                    "year": year,
+                    "year": year_display,
                     "price": price,
                     "km": km
                 })
@@ -136,8 +136,8 @@ def main():
     while True:
         try:
             print(f"\n🔍 Vérification... {time.strftime('%H:%M:%S')}")
-            ads = scrape_ads()
-            print(f"Total annonces 2021+: {len(ads)}")
+            ads = scrape_tesla_ads()
+            print(f"Total annonces: {len(ads)}")
 
             new_ads = [ad for ad in ads if ad["url"] not in seen]
             print(f"Nouvelles annonces: {len(new_ads)}")
@@ -169,4 +169,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
