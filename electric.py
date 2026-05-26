@@ -10,20 +10,15 @@ CHAT_ID = "7547692358"
 MIN_YEAR = 2021
 MAX_PRICE = 25000
 CHECK_INTERVAL = 900  # 15 minutes
-SEEN_FILE = "seen_ads.json"
+SEEN_FILE = "seen_electric.json"
 # ===========================
 
 ELECTRIC_BRANDS = [
-    # Européennes
     "bmw", "audi", "volkswagen", "mercedes-benz", "renault", "peugeot",
     "citroen", "opel", "fiat", "volvo", "polestar", "skoda", "seat",
-    "cupra", "mini", "porsche", "smart",
-    # Asiatiques
-    "toyota", "nissan", "hyundai", "kia", "honda", "mazda", "mitsubishi",
-    "subaru", "byd", "mg", "nio", "xpeng", "ora", "aiways", "zeekr",
-    "lynk-co",
-    # Américaines
-    "rivian", "lucid", "fisker"
+    "cupra", "mini", "porsche", "smart", "toyota", "nissan", "hyundai",
+    "kia", "honda", "mazda", "mitsubishi", "subaru", "byd", "mg", "nio",
+    "xpeng", "ora", "aiways", "zeekr", "lynk-co", "rivian", "lucid", "fisker"
 ]
 
 BASE_URL = "https://www.schadeautos.nl/en/damaged-car"
@@ -58,7 +53,6 @@ def send_telegram(message):
         print(f"Erreur Telegram: {e}")
 
 def extract_price(text):
-    """Extrait le prix numérique depuis une chaîne comme '€ 12.500'"""
     try:
         clean = text.replace("€", "").replace(".", "").replace(",", "").strip()
         return int(''.join(filter(str.isdigit, clean)))
@@ -68,14 +62,15 @@ def extract_price(text):
 def scrape_brand(brand):
     ads = []
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-    
-    for page in range(2):  # page 0 et page 1
+    seen_urls = set()
+
+    for page in range(2):
         url = f"{BASE_URL}/{brand}" if page == 0 else f"{BASE_URL}/{brand}/{page}"
         try:
             response = requests.get(url, headers=headers, timeout=15)
             if response.status_code != 200:
                 continue
-                
+
             soup = BeautifulSoup(response.text, "html.parser")
             links = soup.find_all("a", href=lambda h: h and "/en/damaged/passenger-cars/" in h)
 
@@ -85,6 +80,10 @@ def scrape_brand(brand):
                     continue
 
                 full_url = "https://www.schadeautos.nl" + href if href.startswith("/") else href
+
+                if full_url in seen_urls:
+                    continue
+                seen_urls.add(full_url)
 
                 # Extract year
                 year = None
@@ -96,7 +95,8 @@ def scrape_brand(brand):
                         except:
                             pass
 
-                if year is None or year < MIN_YEAR:
+                # Filter: skip only if year is known AND too old
+                if year is not None and year < MIN_YEAR:
                     continue
 
                 # Extract title
@@ -123,17 +123,17 @@ def scrape_brand(brand):
                 # Extract mileage
                 km = "N/A"
                 for img in link.find_all("img"):
-                    alt = img.get("alt", "")
-                    src = img.get("src", "")
-                    if "distance" in src:
-                        km = alt
+                    if "distance" in img.get("src", ""):
+                        km = img.get("alt", "N/A")
                         break
+
+                year_display = str(year) if year else "?"
 
                 ads.append({
                     "url": full_url,
                     "title": title,
                     "subtitle": subtitle,
-                    "year": year,
+                    "year": year_display,
                     "price": price_raw,
                     "km": km,
                     "brand": brand
@@ -147,34 +147,30 @@ def scrape_brand(brand):
 def scrape_all():
     all_ads = []
     seen_urls = set()
-    
+
     for brand in ELECTRIC_BRANDS:
-        print(f"🔍 Scraping {brand}...")
+        print(f"Scraping {brand}...")
         ads = scrape_brand(brand)
         for ad in ads:
             if ad["url"] not in seen_urls:
                 seen_urls.add(ad["url"])
                 all_ads.append(ad)
-        time.sleep(1)  # Pause pour ne pas surcharger le serveur
-    
+        time.sleep(1)
+
     return all_ads
 
 def main():
     print("⚡ Electric Car Alert Bot démarré !")
-    send_telegram(
-        "⚡ <b>Electric Car Alert Bot démarré !</b>\n"
-        "Je surveille schadeautos.nl pour toutes les voitures électriques 2021+\n"
-        "Prix max : 25.000€ — toutes les 15 minutes."
-    )
+    send_telegram("⚡ <b>Electric Car Alert Bot démarré !</b>\nJe surveille schadeautos.nl pour toutes les voitures électriques 2021+ sous 25.000€ — toutes les 15 minutes.")
 
     seen = load_seen()
     print(f"Annonces déjà vues: {len(seen)}")
 
     while True:
         try:
-            print(f"\n🔍 Vérification... {time.strftime('%H:%M:%S')}")
+            print(f"\n⚡ Vérification... {time.strftime('%H:%M:%S')}")
             ads = scrape_all()
-            print(f"Total annonces trouvées: {len(ads)}")
+            print(f"Total annonces: {len(ads)}")
 
             new_ads = [ad for ad in ads if ad["url"] not in seen]
             print(f"Nouvelles annonces: {len(new_ads)}")
